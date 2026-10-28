@@ -1,11 +1,37 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
-    "file": "name",
+    "name": "itinerary",
+    "title": "Swing itinerary",
+    "for_each": "select w.code || '_' || to_char(sw.start_on, 'YYYY-MM-DD') as id, w.full_name || ' ' || j.code || ' ' || to_char(sw.start_on, 'YYYY-MM-DD') as label from v_swings sw join workers w on w.id = sw.worker_id join jobs j on j.id = sw.job_id where sw.end_on >= current_date and sw.start_on <= current_date + 21 order by sw.start_on, w.code",
+    "file": "label",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      { "title": "Your swing", "layout": "record", "sql": "select w.full_name as name, w.trade, j.code as job, j.name as job_name, si.name as site, c.name as client, si.camp, sw.start_on as first_day, sw.end_on as last_day, sw.days, sw.shift_kind as shift, to_char(case when sw.shift_kind = 'night' then si.night_start else si.day_start end, 'HH24:MI') as start_time from v_swings sw join workers w on w.id = sw.worker_id join jobs j on j.id = sw.job_id join sites si on si.id = j.site_id join clients c on c.id = si.client_id where w.code = split_part($1, '_', 1) and sw.start_on = split_part($1, '_', 2)::date" },
+      { "title": "Flights", "sql": "select f.direction, f.flight_date as date, f.flight_no as flight, f.from_port as from_airport, f.to_port as to_airport, f.booking_ref from flights f join workers w on w.id = f.worker_id join v_swings sw on sw.worker_id = w.id and sw.start_on = split_part($1, '_', 2)::date where w.code = split_part($1, '_', 1) and f.status = 'booked' and f.flight_date between sw.start_on - 1 and sw.end_on + 1 order by f.flight_date" },
+      { "title": "Camp", "sql": "select si.camp, r.room, r.check_in, r.check_out from rooms r join workers w on w.id = r.worker_id join sites si on si.id = r.site_id join v_swings sw on sw.worker_id = w.id and sw.start_on = split_part($1, '_', 2)::date where w.code = split_part($1, '_', 1) and r.status = 'booked' and r.check_in <= sw.end_on and r.check_out >= sw.start_on" },
+      { "title": "Bring these, current to your last day", "note": "Anything marked LAPSES will stop you at the gate. Tell the office now.", "sql": "select q.credential as code, q.credential_name as credential, q.ref, q.expires_on, case when bool_and(q.ok) then 'current' else 'LAPSES' end as status from v_shift_requirements q join workers w on w.id = q.worker_id join v_swings sw on sw.worker_id = w.id and sw.job_id = q.job_id and sw.start_on = split_part($1, '_', 2)::date where w.code = split_part($1, '_', 1) and q.shift_date between sw.start_on and sw.end_on group by q.credential, q.credential_name, q.ref, q.expires_on order by q.credential" }
+    ]
+  },
+  {
+    "name": "crew-pack",
+    "title": "Crew and compliance pack",
+    "for_each": "select j.code as id, j.code || ' ' || j.name as label from jobs j where j.status <> 'finished' order by j.code",
+    "file": "label",
+    "sections": [
+      { "title": "Job", "layout": "record", "sql": "select j.code as job, j.name, c.name as client, si.name as site, j.po_ref as purchase_order, j.starts_on, j.ends_on from jobs j join sites si on si.id = j.site_id join clients c on c.id = si.client_id where j.code = $1" },
+      { "title": "Crew booked for the next 14 days (or the shutdown)", "sql": "select w.code as id, w.full_name as name, w.trade, w.employment, p.name as supplied_by, min(s.shift_date) as first_shift, max(s.shift_date) as last_shift from shifts s join workers w on w.id = s.worker_id left join providers p on p.id = w.provider_id join jobs j on j.id = s.job_id where j.code = $1 and s.status in ('planned','confirmed') and s.shift_date between current_date and greatest(current_date + 14, coalesce(j.ends_on, current_date)) group by w.code, w.full_name, w.trade, w.employment, p.name order by w.trade, w.code" },
+      { "title": "Credentials held, against your site's requirements", "note": "Every credential your site requires for each person, with its number and expiry.", "sql": "select w.code as id, w.full_name as name, q.credential as code, q.credential_name as credential, q.ref, q.expires_on, case when bool_and(q.ok) then 'current' else 'not current for every shift' end as status from v_shift_requirements q join workers w on w.id = q.worker_id join jobs j on j.id = q.job_id where j.code = $1 and q.shift_date between current_date and greatest(current_date + 14, coalesce(j.ends_on, current_date)) group by w.code, w.full_name, q.credential, q.credential_name, q.ref, q.expires_on order by w.code, q.credential" }
+    ]
+  },
+  {
+    "name": "hours-summary",
+    "title": "Hours worked for client sign-off",
+    "for_each": "select j.code as id, j.code || ' ' || j.name as label from jobs j where exists (select 1 from shifts s join timesheets t on t.shift_id = s.id where s.job_id = j.id and s.shift_date >= current_date - 14) order by j.code",
+    "file": "label",
+    "sections": [
+      { "title": "Job", "layout": "record", "sql": "select j.code as job, j.name, c.name as client, si.name as site, j.po_ref as purchase_order, current_date - 14 as period_from, current_date - 1 as period_to from jobs j join sites si on si.id = j.site_id join clients c on c.id = si.client_id where j.code = $1" },
+      { "title": "By person", "sql": "select worker_code as id, worker as name, trade, count(*) as shifts, round(sum(worked_minutes) / 60.0, 2) as hours from v_timesheets where job = $1 and shift_date between current_date - 14 and current_date - 1 and status in ('submitted','approved') group by worker_code, worker, trade order by trade, worker_code" },
+      { "title": "By day", "sql": "select shift_date as date, worker as name, to_char(start_time, 'HH24:MI') as started, to_char(end_time, 'HH24:MI') as finished, break_minutes as break_min, round(worked_minutes / 60.0, 2) as hours, status from v_timesheets where job = $1 and shift_date between current_date - 14 and current_date - 1 order by shift_date, worker" },
+      { "title": "Client sign-off", "note": "Signing confirms the hours above were worked on your site.", "sql": "select '' as name, '' as position, '' as signature, '' as date where $1::text is not null" }
     ]
   }
 ]

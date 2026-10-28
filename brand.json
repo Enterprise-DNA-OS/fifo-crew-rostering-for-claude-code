@@ -1,10 +1,10 @@
 {
   "_": "Your business on every document and view. Change these and run `npm run docs` or `npm run view`.",
-  "business_name": "Your Business",
+  "business_name": "Redgum Diesel & Shutdown Pty Ltd",
   "logo_path": "",
-  "primary": "#6654f5",
-  "accent": "#ca5a8b",
-  "ink": "#0b0c18",
+  "primary": "#a2361f",
+  "accent": "#e0a03a",
+  "ink": "#1a1412",
   "paper": "#ffffff",
-  "footer_line": "Prepared with FIFO Crew Rostering for Claude Code."
+  "footer_line": "Redgum Diesel & Shutdown Pty Ltd, Welshpool WA. Prepared with FIFO Crew Rostering for Claude Code."
 }

@@ -22,9 +22,40 @@ Fill this in once. A worker with context knows. A worker without it guesses.
 
 | When the operator asks for... | Use this |
 |---|---|
-| <!-- TODO(author): one row per slash command --> | `/...` |
+| What needs doing, what is wrong, what is late | `/attention` |
+| The Monday review | `/weekly-review` |
+| A quick picture of the roster | `/stats` |
+| Who is where, the grid | `/board` |
+| Swings, travel and gates for each | `/swings` |
+| A changeover day | `/changeover` |
+| Where a job is short | `/coverage` |
+| Who can fill a gap | `/fill` |
+| Can this person go to this job | `/check` |
+| Book someone on, take someone off | `/assign`, `/end` |
+| A worker confirmed or cannot make it | `/confirm`, `/decline` |
+| People, one person | `/workers`, `/worker` |
+| What expires, add or renew one | `/credentials`, `/credential` |
+| Hours, rest and days in a row | `/fatigue` |
+| Who overrode a gate | `/overrides` |
+| Flights, one flight | `/flights`, `/flight` |
+| Camp rooms, one room | `/rooms`, `/room` |
+| A timesheet to enter (photo, text, spreadsheet) | `/timesheet` |
+| Timesheets for a period, approvals | `/timesheets`, `/approve` |
+| Planned against worked | `/hours` |
+| What to invoice | `/billing` |
+| Hours for the pay run | `/payroll` |
+| Labour hire firms and subbies | `/providers` |
+| Jobs, one job | `/jobs`, `/job` |
+| Is everything in order with the rules | `/compliance` |
+| Itineraries, crew packs, hours summaries | `/documents` |
+| Printable dashboards, or a new one | `/view`, `/new-view` |
+| A message to a worker, a client, a labour hire firm | `/draft-itinerary`, `/draft-credential-reminder`, `/draft-crew-pack`, `/draft-labour-request` |
+| Bring data across from Humanz | `/import` |
+| Get the data out | `/export` |
+| A note on a job or person | `/log` |
+| Change a field, a rule, a limit | `/customise` |
 
-If an ask fits nothing here, run the CLI directly (`npm run <cli> -- --help`) and then propose a new command for it.
+If an ask fits nothing here, run the CLI directly (`npm run roster -- help`) and then propose a new command for it.
 
 ## Hard rules
 
@@ -32,6 +63,11 @@ If an ask fits nothing here, run the CLI directly (`npm run <cli> -- --help`) an
 - Never delete records without an explicit yes in this session. Prefer marking closed or archived.
 - Never invent a record. If a name is ambiguous, list the candidates and ask.
 - The database is the source of truth. If the answer is not in it, say so.
+- Never override a gate on your own. An override needs a reason and a person's name from the operator in this session, and it goes on the audit trail.
+- Never guess a date, a number or a time off a photo of a card, a ticket or a timesheet. If it is unclear, ask.
+- Never send a client a crew pack with anyone in it who is not cleared for the site. Tell the operator first.
+- Nothing here pays anyone or books with an airline or a camp. It records what a person booked and hands payroll a file.
+- Whether a fatigue breach is acceptable is a person's call under your fatigue management plan. Say what the rule is and who set it.
 
 ## Where things live
 

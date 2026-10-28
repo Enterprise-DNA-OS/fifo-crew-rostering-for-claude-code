@@ -1,13 +1,68 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "FIFO Crew Rostering for Claude Code: what needs attention, rendered by npm run view",
+    "title": "The roster this week",
+    "subtitle": "Who is on site, who flies in and out, and where the crew is short",
     "sections": [
       {
-        "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "title": "On shift today, by site",
+        "sql": "select si.code as site, j.code as job, w.code as who, w.full_name as name, w.trade, s.shift_kind as shift, case when exists (select 1 from v_shift_requirements q where q.shift_id = s.id and not q.ok) then 'NOT CLEARED' else '' end as gate from shifts s join workers w on w.id = s.worker_id join jobs j on j.id = s.job_id join sites si on si.id = j.site_id where s.shift_date = current_date and s.status in ('planned','confirmed') order by si.code, j.code, w.trade, w.code"
+      },
+      {
+        "title": "Changeovers, next 7 days",
+        "note": "First and last day of every swing.",
+        "sql": "select x.day, x.movement, w.code as who, w.full_name as name, j.code as job, si.code as site from (select worker_id, job_id, start_on as day, 'in' as movement from v_swings union all select worker_id, job_id, end_on, 'out' from v_swings) x join workers w on w.id = x.worker_id join jobs j on j.id = x.job_id join sites si on si.id = j.site_id where x.day between current_date and current_date + 7 order by x.day, x.movement, si.code, w.code"
+      },
+      {
+        "title": "FIFO swings in the next 14 days with no flight or room",
+        "sql": "select w.code as who, w.full_name as name, j.code as job, sw.start_on, sw.end_on, case when si.travel_mode = 'FIFO' and not exists (select 1 from flights f where f.worker_id = sw.worker_id and f.direction = 'in' and f.status = 'booked' and f.flight_date between sw.start_on - 1 and sw.start_on) and sw.start_on >= current_date then 'missing' else '' end as flight_in, case when si.travel_mode = 'FIFO' and not exists (select 1 from flights f where f.worker_id = sw.worker_id and f.direction = 'out' and f.status = 'booked' and f.flight_date between sw.end_on and sw.end_on + 1) then 'missing' else '' end as flight_out, case when not exists (select 1 from rooms r where r.worker_id = sw.worker_id and r.site_id = j.site_id and r.status = 'booked' and r.check_in <= sw.start_on and r.check_out >= sw.end_on) then 'missing' else '' end as room from v_swings sw join workers w on w.id = sw.worker_id join jobs j on j.id = sw.job_id join sites si on si.id = j.site_id where sw.end_on >= current_date and sw.start_on <= current_date + 14 and ((si.travel_mode = 'FIFO' and (sw.start_on >= current_date and not exists (select 1 from flights f where f.worker_id = sw.worker_id and f.direction = 'in' and f.status = 'booked' and f.flight_date between sw.start_on - 1 and sw.start_on) or not exists (select 1 from flights f where f.worker_id = sw.worker_id and f.direction = 'out' and f.status = 'booked' and f.flight_date between sw.end_on and sw.end_on + 1))) or not exists (select 1 from rooms r where r.worker_id = sw.worker_id and r.site_id = j.site_id and r.status = 'booked' and r.check_in <= sw.start_on and r.check_out >= sw.end_on)) order by sw.start_on, w.code"
+      },
+      {
+        "title": "Days a job is short of crew, next 21 days",
+        "sql": "select j.code as job, jr.trade, g.d::date as day, jr.headcount as need, (select count(*) from shifts s join workers w on w.id = s.worker_id where s.job_id = j.id and s.shift_date = g.d::date and s.status in ('planned','confirmed') and lower(w.trade) = lower(jr.trade)) as booked from jobs j join job_roles jr on jr.job_id = j.id cross join lateral generate_series(greatest(j.starts_on, current_date), least(coalesce(j.ends_on, current_date + 21), current_date + 21), interval '1 day') g(d) where j.status <> 'finished' and (select count(*) from shifts s join workers w on w.id = s.worker_id where s.job_id = j.id and s.shift_date = g.d::date and s.status in ('planned','confirmed') and lower(w.trade) = lower(jr.trade)) < jr.headcount order by j.code, jr.trade, day"
+      }
+    ]
+  },
+  {
+    "name": "compliance",
+    "title": "Gates, fatigue and credentials",
+    "subtitle": "Who is booked but not cleared, who is over a fatigue limit, what expires soon",
+    "sections": [
+      {
+        "title": "Booked but not cleared for the site, next 28 days",
+        "sql": "select w.code as who, w.full_name as name, j.code as job, q.credential, q.credential_name as what, q.expires_on as expired_on, min(q.shift_date) as first_shift, count(*) as shifts from v_shift_requirements q join workers w on w.id = q.worker_id join jobs j on j.id = q.job_id where not q.ok and q.shift_date between current_date - 7 and current_date + 28 group by w.code, w.full_name, j.code, q.credential, q.credential_name, q.expires_on order by min(q.shift_date)"
+      },
+      {
+        "title": "Shifts over a fatigue limit, 14 days back and 21 ahead",
+        "note": "The strictest of the business, client and site rule applies.",
+        "sql": "select w.code as who, w.full_name as name, j.code as job, f.shift_date as date, round(f.minutes / 60.0, 1) as shift_h, round(f.rest_minutes / 60.0, 1) as rest_h, f.consecutive as in_a_row, round(f.minutes_14d / 60.0, 1) as hours_14d, f.policies from v_fatigue f join workers w on w.id = f.worker_id join jobs j on j.id = f.job_id where f.shift_date between current_date - 14 and current_date + 21 and (f.minutes > f.max_shift_minutes or f.rest_minutes < f.min_rest_minutes or f.consecutive > f.max_consecutive or f.minutes_14d > f.max_14d_minutes) order by w.code, f.shift_date"
+      },
+      {
+        "title": "Credentials expired or expiring in 60 days",
+        "sql": "select w.code as who, w.full_name as name, ct.code as credential, ct.name as what, c.expires_on, (c.expires_on - current_date) as days_left from credentials c join workers w on w.id = c.worker_id join credential_types ct on ct.id = c.credential_type_id where w.active and c.expires_on <= current_date + 60 order by c.expires_on"
+      },
+      {
+        "title": "Overrides, last 60 days",
+        "sql": "select e.at::date as on_day, w.code as who, w.full_name as name, j.code as job, e.rule, coalesce(e.reason, '(none given)') as reason, coalesce(e.by_name, '(nobody)') as approved_by from roster_events e left join workers w on w.id = e.worker_id left join jobs j on j.id = e.job_id where e.kind = 'override' and e.at >= now() - interval '60 days' order by e.at desc"
+      }
+    ]
+  },
+  {
+    "name": "hours",
+    "title": "Hours and money",
+    "subtitle": "Timesheets waiting, planned against worked, and approved hours not yet invoiced",
+    "sections": [
+      {
+        "title": "Timesheets waiting for approval",
+        "sql": "select job, worker_code as who, worker as name, shift_date as date, round(worked_minutes / 60.0, 2) as hours, submitted_on, (current_date - submitted_on) as days_waiting from v_timesheets where status = 'submitted' order by submitted_on, job, worker_code"
+      },
+      {
+        "title": "Planned against worked, last 14 days, by job",
+        "sql": "select j.code as job, c.name as client, count(*) as shifts, round(sum(s.planned_minutes) / 60.0, 1) as planned_h, round(coalesce(sum(t.worked_minutes), 0) / 60.0, 1) as worked_h, count(*) filter (where t.id is null) as no_timesheet from shifts s join jobs j on j.id = s.job_id join sites si on si.id = j.site_id join clients c on c.id = si.client_id left join timesheets t on t.shift_id = s.id where s.status in ('planned','confirmed') and s.shift_date between current_date - 14 and current_date - 1 group by j.code, c.name order by j.code"
+      },
+      {
+        "title": "Approved hours not yet invoiced",
+        "sql": "select job, client, count(*) as timesheets, round(sum(worked_minutes) / 60.0, 1) as hours, to_char(sum(value_cents) / 100.0, 'FM$999,999,990') as value, min(shift_date) as oldest from v_timesheets where status = 'approved' and invoiced_on is null group by job, client order by min(shift_date)"
       }
     ]
   }
